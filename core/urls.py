@@ -1,0 +1,32 @@
+from django.urls import path
+from rest_framework_simplejwt.views import (
+    TokenObtainPairView, TokenRefreshView
+)
+from . import views
+
+urlpatterns = [
+    # Auth
+    path('auth/register/', views.RegisterView.as_view()),
+    path('auth/login/', TokenObtainPairView.as_view()),
+    path('auth/refresh/', TokenRefreshView.as_view()),
+    path('auth/me/', views.MeView.as_view()),
+
+    # CX - Customer browsing
+    path('barbers/', views.BarberListView.as_view()),
+    path('barbers/<int:pk>/', views.BarberDetailView.as_view()),
+    path('barbers/<int:barber_id>/slots/',
+         views.BarberTimeSlotsView.as_view()),
+    path('barbers/<int:barber_id>/reviews/',
+         views.BarberReviewsView.as_view()),
+
+    # Booking
+    path('bookings/', views.CreateBookingView.as_view()),
+
+    # BX - Barber dashboard
+    path('my/schedule/', views.MyScheduleView.as_view()),
+    path('my/slots/', views.CreateTimeSlotView.as_view()),
+    path('my/walk-ins/', views.CreateWalkInView.as_view()),
+
+    # Reviews
+    path('reviews/', views.CreateReviewView.as_view()),
+]

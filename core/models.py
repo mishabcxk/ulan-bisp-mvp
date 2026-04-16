@@ -1,0 +1,76 @@
+from django.contrib.auth.models import AbstractUser
+from django.db import models
+
+class User(AbstractUser):
+    ROLE_CHOICES = [
+        ('customer', 'Customer'),
+        ('barber', 'Barber'),
+        ('admin', 'Admin'),
+    ]
+    role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='customer')
+    phone = models.CharField(max_length=20, blank=True)
+
+class BarberProfile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='barber_profile')
+    bio = models.TextField(blank=True)
+    address = models.CharField(max_length=255, blank=True)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    is_verified = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+class Service(models.Model):
+    barber_profile = models.ForeignKey(BarberProfile, on_delete=models.CASCADE, related_name='services')
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    price = models.IntegerField()  # in UZS
+    duration_minutes = models.IntegerField(default=30)
+
+class PortfolioPhoto(models.Model):
+    barber_profile = models.ForeignKey(BarberProfile, on_delete=models.CASCADE, related_name='photos')
+    image = models.ImageField(upload_to='portfolios/')
+    caption = models.CharField(max_length=200, blank=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+class TimeSlot(models.Model):
+    STATUS_CHOICES = [
+        ('available', 'Available'),
+        ('held', 'Held'),
+        ('booked', 'Booked'),
+    ]
+    barber_profile = models.ForeignKey(BarberProfile, on_delete=models.CASCADE, related_name='time_slots')
+    service = models.ForeignKey(Service, on_delete=models.CASCADE, null=True, blank=True)
+    date = models.DateField()
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='available')
+
+    class Meta:
+        unique_together = ['barber_profile', 'date', 'start_time']
+
+class Booking(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('confirmed', 'Confirmed'),
+        ('cancelled', 'Cancelled'),
+        ('no_show', 'No Show'),
+    ]
+    customer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='bookings')
+    time_slot = models.OneToOneField(TimeSlot, on_delete=models.CASCADE)
+    service = models.ForeignKey(Service, on_delete=models.CASCADE)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+    stripe_payment_ref = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+class Review(models.Model):
+    booking = models.OneToOneField(Booking, on_delete=models.CASCADE, related_name='review')
+    rating = models.IntegerField(choices=[(i, i) for i in range(1, 6)])
+    comment = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+class WalkIn(models.Model):
+    barber_profile = models.ForeignKey(BarberProfile, on_delete=models.CASCADE, related_name='walk_ins')
+    service = models.ForeignKey(Service, on_delete=models.CASCADE)
+    client_name = models.CharField(max_length=100, blank=True)
+    notes = models.TextField(blank=True)
+    timestamp = models.DateTimeField(auto_now_add=True)
