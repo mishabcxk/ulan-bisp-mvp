@@ -1,3 +1,6 @@
+import os
+import stripe
+from rest_framework.views import APIView
 from django.shortcuts import render
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
@@ -5,6 +8,8 @@ from rest_framework.decorators import api_view, permission_classes
 from django.db import transaction
 from .models import *
 from .serializers import *
+from django.db.models import Q
+
 
 # --- AUTH ---
 class RegisterView(generics.CreateAPIView):
@@ -21,11 +26,17 @@ class MeView(generics.RetrieveAPIView):
 class BarberListView(generics.ListAPIView):
     serializer_class = BarberProfileSerializer
     permission_classes = [permissions.AllowAny]
+    
     def get_queryset(self):
         qs = BarberProfile.objects.filter(is_verified=True)
-        service_type = self.request.query_params.get('service')
-        if service_type:
-            qs = qs.filter(services__name__icontains=service_type)
+        search_query = self.request.query_params.get('service') # React still sends this as ?service=
+        
+        if search_query:
+            # This tells Django: "Match if the Service Name contains the word OR (|) if the Username contains the word!"
+            qs = qs.filter(
+                Q(services__name__icontains=search_query) | 
+                Q(user__username__icontains=search_query)
+            )
         return qs.distinct()
 
 class BarberDetailView(generics.RetrieveAPIView):
@@ -116,3 +127,32 @@ class BarberReviewsView(generics.ListAPIView):
         return Review.objects.filter(
             booking__time_slot__barber_profile_id=barber_id
         )
+    
+# --- STRIPE ---
+
+    # Set your secret key (In production, put this in a .env file!)
+stripe.api_key = os.environ.get('STRIPE_SECRET_KEY') 
+
+class CreatePaymentIntentView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        try:
+            service_id = request.data.get('service_id')
+            service = Service.objects.get(id=service_id)
+            
+            # Stripe requires amounts in the smallest currency unit. 
+            # E.g., if you are testing with USD, $10.00 is 1000 cents.
+            # We will use 'usd' for the sandbox to avoid local currency errors.
+            amount = int(float(service.price) * 100) 
+
+            # Create a PaymentIntent with the order amount and currency
+            intent = stripe.PaymentIntent.create(
+                amount=amount,
+                currency='usd', 
+                automatic_payment_methods={'enabled': True},
+            )
+            return Response({'clientSecret': intent.client_secret})
+        
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)

@@ -3,6 +3,7 @@ from rest_framework_simplejwt.views import (
     TokenObtainPairView, TokenRefreshView
 )
 from . import views
+from core.views import CreateBookingView, CreatePaymentIntentView
 
 urlpatterns = [
     # Auth
@@ -29,4 +30,8 @@ urlpatterns = [
 
     # Reviews
     path('reviews/', views.CreateReviewView.as_view()),
+
+    # Stripe
+    path('bookings/', CreateBookingView.as_view(), name='create-booking'),
+    path('create-payment-intent/', CreatePaymentIntentView.as_view(), name='create-payment-intent'),
 ]
