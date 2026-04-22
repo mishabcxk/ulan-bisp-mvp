@@ -13,3 +13,6 @@ frontend/build/
 
 # Mac System Files
 .DS_Store
+
+#VS_Code settings
+.vscode/

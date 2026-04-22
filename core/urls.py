@@ -20,13 +20,14 @@ urlpatterns = [
     path('barbers/<int:barber_id>/reviews/',
          views.BarberReviewsView.as_view()),
 
-    # Booking
-    path('bookings/', views.CreateBookingView.as_view()),
-
     # BX - Barber dashboard
     path('my/schedule/', views.MyScheduleView.as_view()),
     path('my/slots/', views.CreateTimeSlotView.as_view()),
-    path('my/walk-ins/', views.CreateWalkInView.as_view()),
+    path('my/profile/', views.MyBarberProfileView.as_view()),
+    path('my/services/', views.MyServicesView.as_view()),
+    path('my/services/<int:pk>/', views.MyServiceDetailView.as_view()),
+    path('my/photos/', views.MyPhotosView.as_view()),
+    path('my/photos/<int:pk>/', views.MyPhotoDetailView.as_view()),
 
     # Reviews
     path('reviews/', views.CreateReviewView.as_view()),

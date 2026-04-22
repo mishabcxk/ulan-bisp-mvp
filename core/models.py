@@ -37,6 +37,7 @@ class TimeSlot(models.Model):
         ('available', 'Available'),
         ('held', 'Held'),
         ('booked', 'Booked'),
+        ('walk_in', 'Walk-in'), # New option, because of the WalkIn table removal
     ]
     barber_profile = models.ForeignKey(BarberProfile, on_delete=models.CASCADE, related_name='time_slots')
     service = models.ForeignKey(Service, on_delete=models.CASCADE, null=True, blank=True)
@@ -44,7 +45,8 @@ class TimeSlot(models.Model):
     start_time = models.TimeField()
     end_time = models.TimeField()
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='available')
-
+    client_name = models.CharField(max_length=100, blank=True, null=True) # Moved it from WalkIn table
+    notes = models.TextField(blank=True, null=True) # Moved it from WalkIn table
     class Meta:
         unique_together = ['barber_profile', 'date', 'start_time']
 
@@ -67,10 +69,3 @@ class Review(models.Model):
     rating = models.IntegerField(choices=[(i, i) for i in range(1, 6)])
     comment = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
-
-class WalkIn(models.Model):
-    barber_profile = models.ForeignKey(BarberProfile, on_delete=models.CASCADE, related_name='walk_ins')
-    service = models.ForeignKey(Service, on_delete=models.CASCADE)
-    client_name = models.CharField(max_length=100, blank=True)
-    notes = models.TextField(blank=True)
-    timestamp = models.DateTimeField(auto_now_add=True)

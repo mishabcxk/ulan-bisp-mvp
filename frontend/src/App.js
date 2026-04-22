@@ -3,9 +3,9 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import CXSearchPage from './pages/CXSearchPage';
-import BXDashboard from './pages/BXDashboard';
 import CXBarberProfile from './pages/CXBarberProfile';
 import CXCheckoutPage from './pages/CXCheckoutPage';
+import BXDashboard from './pages/BXDashboard';
 
 function ProtectedRoute({ children, allowedRole }) {
   const { user, loading } = useAuth();
