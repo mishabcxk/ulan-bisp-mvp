@@ -18,6 +18,8 @@ class BarberProfile(models.Model):
     longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     is_verified = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+    legal_name = models.CharField(max_length=255, blank=True, null=True)
+    tax_id = models.CharField(max_length=9, blank=True, null=True)
 
 class Service(models.Model):
     barber_profile = models.ForeignKey(BarberProfile, on_delete=models.CASCADE, related_name='services')

@@ -19,7 +19,7 @@ const getStartOfWeek = (date) => {
 };
 
 export default function BXDashboard() {
-  const [activeTab, setActiveTab] = useState('calendar'); // 'calendar', 'settings', or 'profile'
+  const [activeTab, setActiveTab] = useState('calendar'); 
   const [schedule, setSchedule] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentWeekStart, setCurrentWeekStart] = useState(getStartOfWeek(new Date()));
@@ -54,13 +54,15 @@ export default function BXDashboard() {
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [enlargedPhoto, setEnlargedPhoto] = useState(null);
 
-  // NEW: User Account State
   const [user, setUser] = useState(null);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [isSavingUser, setIsSavingUser] = useState(false);
+
+  // NEW: Stats State
+  const [stats, setStats] = useState({ today_bookings: 0, today_revenue: 0, overall_bookings: 0 });
 
   const currentWeekDays = Array.from({ length: 7 }).map((_, i) => {
     const d = new Date(currentWeekStart);
@@ -96,7 +98,6 @@ export default function BXDashboard() {
     }
   };
 
-  // NEW: Fetch Base User Details
   const fetchUser = async () => {
     try {
       const res = await API.get('auth/me/');
@@ -110,10 +111,21 @@ export default function BXDashboard() {
     }
   };
 
+  // NEW: Fetch Dashboard Stats
+  const fetchStats = async () => {
+    try {
+      const res = await API.get('my/stats/');
+      setStats(res.data);
+    } catch (err) {
+      console.error("Error fetching stats:", err);
+    }
+  };
+
   useEffect(() => {
     fetchSchedule();
     fetchSettings();
     fetchUser();
+    fetchStats();
   }, []);
 
   const handlePrevWeek = () => {
@@ -156,6 +168,7 @@ export default function BXDashboard() {
       }
       await Promise.all(promises);
       await fetchSchedule();
+      await fetchStats(); // Refresh stats!
       setIsModalOpen(false);
       alert('Availability created successfully!');
     } catch (err) {
@@ -179,6 +192,7 @@ export default function BXDashboard() {
         notes: walkInNotes
       });
       await fetchSchedule();
+      await fetchStats(); // Refresh stats!
       setIsWalkInModalOpen(false);
       setWalkInClient('');
       setWalkInNotes('');
@@ -205,12 +219,10 @@ export default function BXDashboard() {
     }
   };
 
-  // NEW: Save Base User Details
   const handleSaveUser = async (e) => {
     e.preventDefault();
     setIsSavingUser(true);
     try {
-      // We use patch to only update the fields we send
       await API.patch('auth/me/', {
         first_name: firstName,
         last_name: lastName,
@@ -218,7 +230,7 @@ export default function BXDashboard() {
         phone: phone
       });
       alert('Account details updated successfully!');
-      fetchUser(); // Refresh the dynamic avatar
+      fetchUser(); 
     } catch (err) {
       console.error(err);
       alert('Failed to update account details.');
@@ -301,16 +313,19 @@ export default function BXDashboard() {
     return schedule.find(slot => slot.date === dateStr && slot.start_time.startsWith(timeStr));
   };
 
-  // Determine the correct avatar letter dynamically
   const displayAvatar = user?.first_name 
     ? user.first_name.charAt(0).toUpperCase() 
     : (user?.username ? user.username.charAt(0).toUpperCase() : 'U');
+
+  const handleLogout = () => {
+    localStorage.removeItem('access_token');
+    window.location.href = '/login'; 
+  };
 
   return (
     <div style={{ minHeight: '100vh', background: '#F9FAFB' }}>
       
       <header style={{ background: 'white', borderBottom: '1px solid #E5E7EB', padding: '0 40px', height: 70, display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 100 }}>
-        {/* UPDATED: Increased font size to 30, adjusted margins for perfect visual alignment */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 40, height: '100%' }}>
           <h1 style={{ margin: 0, fontSize: 30, color: '#F43F5E', letterSpacing: '-0.5px' }}>Ulan</h1>
           
@@ -321,16 +336,21 @@ export default function BXDashboard() {
             <button onClick={() => setActiveTab('settings')} style={{ background: 'none', border: 'none', fontSize: 16, cursor: 'pointer', fontWeight: activeTab === 'settings' ? 'bold' : 'normal', color: activeTab === 'settings' ? '#111827' : '#6B7280', borderBottom: activeTab === 'settings' ? '2px solid #F43F5E' : '2px solid transparent', height: '100%', padding: '0 5px' }}>
               Services & Portfolio
             </button>
-            {/* NEW: Account Profile Tab */}
             <button onClick={() => setActiveTab('profile')} style={{ background: 'none', border: 'none', fontSize: 16, cursor: 'pointer', fontWeight: activeTab === 'profile' ? 'bold' : 'normal', color: activeTab === 'profile' ? '#111827' : '#6B7280', borderBottom: activeTab === 'profile' ? '2px solid #F43F5E' : '2px solid transparent', height: '100%', padding: '0 5px' }}>
               Account Profile
             </button>
           </nav>
         </div>
-        {/* UPDATED: Dynamic user avatar */}
-        <div style={{ width: 35, height: 35, background: '#E5E7EB', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', color: '#374151', fontSize: 16 }}>
+
+        {/* UPDATED AVATAR: Now clickable and linked to the profile tab! */}
+        <div 
+          onClick={() => setActiveTab('profile')}
+          style={{ width: 35, height: 35, background: '#E5E7EB', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', color: '#374151', fontSize: 16, cursor: 'pointer', border: '1px solid #D1D5DB' }}
+          title="Go to Account Profile"
+        >
           {displayAvatar}
         </div>
+        
       </header>
 
       {/* --- TAB CONTENT: CALENDAR --- */}
@@ -356,6 +376,25 @@ export default function BXDashboard() {
           </div>
 
           <div style={{ flex: 1, padding: 20, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            
+            {/* NEW: DASHBOARD METRICS CARDS */}
+            <div style={{ display: 'flex', gap: 20, marginBottom: 20 }}>
+              <div style={{ flex: 1, background: '#F9FAFB', padding: 20, borderRadius: 12, border: '1px solid #E5E7EB' }}>
+                <h3 style={{ margin: '0 0 10px 0', fontSize: 14, color: '#6B7280', fontWeight: 'normal' }}>today's bookings</h3>
+                <div style={{ fontSize: 32, fontWeight: 'bold', color: '#06B6D4' }}>{stats.today_bookings}</div>
+              </div>
+              <div style={{ flex: 1, background: '#F9FAFB', padding: 20, borderRadius: 12, border: '1px solid #E5E7EB' }}>
+                <h3 style={{ margin: '0 0 10px 0', fontSize: 14, color: '#6B7280', fontWeight: 'normal' }}>today's revenue</h3>
+                <div style={{ fontSize: 32, fontWeight: 'bold', color: '#111827' }}>
+                  {stats.today_revenue > 0 ? `${(stats.today_revenue / 1000)}k` : '0'}
+                </div>
+              </div>
+              <div style={{ flex: 1, background: '#F9FAFB', padding: 20, borderRadius: 12, border: '1px solid #E5E7EB' }}>
+                <h3 style={{ margin: '0 0 10px 0', fontSize: 14, color: '#6B7280', fontWeight: 'normal' }}>overall bookings</h3>
+                <div style={{ fontSize: 32, fontWeight: 'bold', color: '#D946EF' }}>{stats.overall_bookings}</div>
+              </div>
+            </div>
+
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 15 }}>
                 <div style={{ display: 'flex', border: '1px solid #D1D5DB', borderRadius: 8, overflow: 'hidden' }}>
@@ -518,7 +557,6 @@ export default function BXDashboard() {
           
           <h1 style={{ marginTop: 0, marginBottom: 30, fontSize: 24, borderBottom: '2px solid #F3F4F6', paddingBottom: 15 }}>Account Profile</h1>
 
-          {/* Read-only Data Ribbon */}
           <div style={{ display: 'flex', gap: 20, marginBottom: 30, background: '#F9FAFB', padding: 15, borderRadius: 8, border: '1px solid #E5E7EB' }}>
             <div style={{ flex: 1 }}>
               <span style={{ display: 'block', fontSize: 12, color: '#6B7280', fontWeight: 'bold', textTransform: 'uppercase' }}>Username</span>
@@ -536,7 +574,6 @@ export default function BXDashboard() {
             </div>
           </div>
 
-          {/* Editable Form */}
           <form onSubmit={handleSaveUser} style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
             <div style={{ display: 'flex', gap: 15 }}>
               <div style={{ flex: 1 }}>
@@ -559,10 +596,21 @@ export default function BXDashboard() {
               <input type="text" value={phone} onChange={e => setPhone(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: 10, borderRadius: 6, border: '1px solid #D1D5DB' }} placeholder="+998 90 123 45 67" />
             </div>
 
-            <button type="submit" disabled={isSavingUser} style={{ alignSelf: 'flex-end', padding: '10px 25px', background: '#111827', color: 'white', border: 'none', borderRadius: 6, fontWeight: 'bold', cursor: 'pointer', marginTop: 10 }}>
+            <button type="submit" disabled={isSavingUser} style={{ alignSelf: 'flex-end', padding: '14px', background: '#111827', color: 'white', border: 'none', borderRadius: 6, fontWeight: 'bold', cursor: 'pointer', marginTop: 10, width: '100%', fontSize: 16 }}>
               {isSavingUser ? 'Saving...' : 'Save Account Details'}
             </button>
           </form>
+
+         <div style={{ marginTop: 20 }}>
+            <button 
+              onClick={handleLogout} 
+              style={{ width: '100%', padding: '14px', background: '#FEF2F2', color: '#EF4444', border: '1px solid #FECACA', borderRadius: 8, fontWeight: 'bold', cursor: 'pointer', fontSize: 16, transition: 'background 0.2s' }}
+              onMouseEnter={(e) => e.currentTarget.style.background = '#FEE2E2'}
+              onMouseLeave={(e) => e.currentTarget.style.background = '#FEF2F2'}
+            >
+              Log Out
+            </button>
+          </div>
 
         </div>
       )}

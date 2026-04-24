@@ -6,6 +6,10 @@ import CXSearchPage from './pages/CXSearchPage';
 import CXBarberProfile from './pages/CXBarberProfile';
 import CXCheckoutPage from './pages/CXCheckoutPage';
 import BXDashboard from './pages/BXDashboard';
+import CXHomePage from './pages/CXHomePage';
+import CXProfilePage from './pages/CXProfilePage';
+import CXBookingsPage from './pages/CXBookingsPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
 
 function ProtectedRoute({ children, allowedRole }) {
   const { user, loading } = useAuth();
@@ -23,10 +27,14 @@ function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
           {/* CX Routes */}
+          <Route path="/home" element={<CXHomePage />} />
           <Route path="/search" element={<CXSearchPage />} />
-          <Route path="/barbers/:id" element={<CXBarberProfile />} /> {/* NEW ROUTE HERE */}
+          <Route path="/barbers/:id" element={<CXBarberProfile />} /> 
+          <Route path="/profile" element={<CXProfilePage />} /> 
+          <Route path="/bookings" element={<CXBookingsPage />} /> 
 
 
           {/* BX Routes - barbers only */}

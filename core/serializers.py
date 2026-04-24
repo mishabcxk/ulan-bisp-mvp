@@ -2,16 +2,41 @@ from rest_framework import serializers
 from .models import *
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True)
+    # We explicitly declare these so Django accepts them in the request, 
+    # even though they don't belong to the User model directly!
+    legal_name = serializers.CharField(write_only=True, required=False)
+    tax_id = serializers.CharField(write_only=True, required=False)
 
     class Meta:
-        model = User
-        fields = ['id', 'username', 'email', 'password', 'role', 'phone']
+        model = User # (Or whatever your custom user model is named)
+        fields = ['username', 'email', 'phone', 'first_name', 'last_name', 'password', 'role', 'legal_name', 'tax_id']
+        extra_kwargs = {'password': {'write_only': True}}
 
     def create(self, validated_data):
-        user = User.objects.create_user(**validated_data)
+        # 1. Pop out the barber-specific fields so they don't break the User creation
+        legal_name = validated_data.pop('legal_name', '')
+        tax_id = validated_data.pop('tax_id', '')
+
+        # 2. Create the core User securely
+        user = User.objects.create_user(
+            username=validated_data['username'],
+            email=validated_data['email'],
+            password=validated_data['password'],
+            phone=validated_data.get('phone', ''),
+            first_name=validated_data.get('first_name', ''),
+            last_name=validated_data.get('last_name', ''),
+            role=validated_data.get('role', 'customer'),
+            is_active=False
+        )
+
+        # 3. IF they are a barber, instantly build their BarberProfile!
         if user.role == 'barber':
-            BarberProfile.objects.create(user=user)
+            BarberProfile.objects.create(
+                user=user,
+                legal_name=legal_name,
+                tax_id=tax_id
+            )
+
         return user
 
 class UserSerializer(serializers.ModelSerializer):
@@ -85,9 +110,26 @@ class TimeSlotSerializer(serializers.ModelSerializer):
         return ""
 
 class BookingSerializer(serializers.ModelSerializer):
+    service = ServiceSerializer(read_only=True)
+    time_slot = TimeSlotSerializer(read_only=True)
+    
+    # NEW: Explicitly grab the barber's info so React doesn't have to guess!
+    barber_name = serializers.SerializerMethodField()
+    barber_id = serializers.SerializerMethodField()
+
     class Meta:
         model = Booking
         fields = '__all__'
+
+    def get_barber_name(self, obj):
+        # Navigate through the time slot to the profile, then to the user
+        user = obj.time_slot.barber_profile.user
+        if user.first_name:
+            return f"{user.first_name} {user.last_name}".strip()
+        return user.username
+
+    def get_barber_id(self, obj):
+        return obj.time_slot.barber_profile.id
 
 class ReviewSerializer(serializers.ModelSerializer):
     class Meta:

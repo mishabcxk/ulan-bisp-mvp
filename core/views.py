@@ -1,5 +1,7 @@
 import os
 import stripe
+import datetime
+import random
 from rest_framework.views import APIView
 from django.shortcuts import render
 from rest_framework import generics, permissions, status
@@ -8,13 +10,73 @@ from rest_framework.decorators import api_view, permission_classes
 from django.db import transaction
 from .models import *
 from .serializers import *
-from django.db.models import Q
-
+from django.db.models import Q, Min
+from django.contrib.auth import get_user_model
+from django.core.cache import cache
+from django.core.mail import send_mail
 
 # --- AUTH ---
 class RegisterView(generics.CreateAPIView):
     serializer_class = UserRegistrationSerializer
     permission_classes = [permissions.AllowAny]
+
+    def create(self, request, *args, **kwargs):
+        # 1. Validate and save the user (This triggers the Serializer we wrote earlier!)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save() 
+
+        # 2. Generate a random 6-digit OTP
+        otp_code = str(random.randint(100000, 999999))
+
+        # 3. Store the OTP in the cache, attached to their email. It expires in 600 seconds (10 mins).
+        cache.set(f"otp_{user.email}", otp_code, timeout=600)
+
+        # 4. Send the Email! (This will print in your terminal for now)
+        send_mail(
+            subject="Your Ulan Verification Code",
+            message=f"Welcome to Ulan! \n\nYour 6-digit verification code is: {otp_code}\n\nThis code will expire in 10 minutes.",
+            from_email="noreply@ulan.com",
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+
+        return Response(
+            {"detail": "User created. OTP sent to email."}, 
+            status=status.HTTP_201_CREATED
+        )
+
+# NEW: The view that React pings when the user types in the 6 digits
+class VerifyEmailView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        email = request.data.get('email')
+        code = request.data.get('code')
+
+        if not email or not code:
+            return Response({"detail": "Email and code are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 1. Look up the code in the cache
+        saved_code = cache.get(f"otp_{email}")
+
+        # 2. Check if it exists and matches
+        if saved_code is not None and saved_code == code:
+            try:
+                # Find the locked user and unlock them!
+                user = User.objects.get(email=email)
+                user.is_active = True
+                user.save()
+                
+                # Delete the OTP from the cache so it can't be used again
+                cache.delete(f"otp_{email}")
+                
+                return Response({"detail": "Email verified successfully!"}, status=status.HTTP_200_OK)
+            except User.DoesNotExist:
+                return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+        
+        # If the code was wrong, or if 10 minutes passed and it deleted itself:
+        return Response({"detail": "Invalid or expired verification code."}, status=status.HTTP_400_BAD_REQUEST)
 
 class MeView(generics.RetrieveUpdateAPIView):
     serializer_class = UserSerializer
@@ -22,22 +84,130 @@ class MeView(generics.RetrieveUpdateAPIView):
     def get_object(self):
         return self.request.user
 
+User = get_user_model()
+class CheckUniqueView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        field = request.query_params.get('field')
+        value = request.query_params.get('value')
+        
+        if not field or not value:
+            return Response({"error": "Missing parameters"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        is_taken = False
+        
+        # Check the User table
+        if field == 'username':
+            is_taken = User.objects.filter(username__iexact=value).exists()
+        elif field == 'phone':
+            is_taken = User.objects.filter(phone=value).exists()
+        elif field == 'email':
+            is_taken = User.objects.filter(email__iexact=value).exists()
+            
+        # Check the BarberProfile table
+        elif field == 'legalName':
+            is_taken = BarberProfile.objects.filter(legal_name__iexact=value).exists()
+        elif field == 'taxId':
+            is_taken = BarberProfile.objects.filter(tax_id=value).exists()
+            
+        return Response({"is_taken": is_taken}, status=status.HTTP_200_OK)
+    
+# --- PASSWORD RESET FLOW ---
+class PasswordResetRequestView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        email = request.data.get('email')
+        if not email:
+            return Response({"detail": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.objects.get(email__iexact=email)
+            
+            # Generate a 6-digit OTP
+            otp_code = str(random.randint(100000, 999999))
+            
+            # Store it in cache with a special 'reset' prefix for 10 minutes
+            cache.set(f"otp_reset_{user.email}", otp_code, timeout=600)
+
+            # Send the Email (Will print to terminal for now)
+            send_mail(
+                subject="Ulan Password Reset Code",
+                message=f"We received a request to reset your password.\n\nYour 6-digit reset code is: {otp_code}\n\nThis code will expire in 10 minutes. If you did not request this, please ignore this email.",
+                from_email="noreply@ulan.com",
+                recipient_list=[user.email],
+                fail_silently=False,
+            )
+        except User.DoesNotExist:
+            # SECURITY BEST PRACTICE: Don't tell the user if the email exists or not.
+            # This prevents malicious bots from guessing user emails.
+            pass
+
+        # Always return the same message regardless of whether the email was real
+        return Response(
+            {"detail": "If that email is in our system, we have sent a reset code."}, 
+            status=status.HTTP_200_OK
+        )
+
+class PasswordResetConfirmView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        email = request.data.get('email')
+        code = request.data.get('code')
+        new_password = request.data.get('new_password')
+
+        if not all([email, code, new_password]):
+            return Response({"detail": "Email, code, and new password are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Look up the reset code in the cache
+        saved_code = cache.get(f"otp_reset_{email}")
+
+        if saved_code is not None and saved_code == code:
+            try:
+                user = User.objects.get(email__iexact=email)
+                
+                # Securely set the new password and save
+                user.set_password(new_password)
+                user.save()
+                
+                # Delete the OTP from the cache so it cannot be reused
+                cache.delete(f"otp_reset_{email}")
+                
+                return Response({"detail": "Password has been reset successfully!"}, status=status.HTTP_200_OK)
+            except User.DoesNotExist:
+                return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+        
+        return Response({"detail": "Invalid or expired reset code."}, status=status.HTTP_400_BAD_REQUEST)
+
 # --- BARBER CATALOG (CX) ---
 class BarberListView(generics.ListAPIView):
     serializer_class = BarberProfileSerializer
     permission_classes = [permissions.AllowAny]
     
     def get_queryset(self):
-        qs = BarberProfile.objects.filter(is_verified=True)
-        search_query = self.request.query_params.get('service') # React still sends this as ?service=
+        queryset = BarberProfile.objects.all()
         
-        if search_query:
-            # This tells Django: "Match if the Service Name contains the word OR (|) if the Username contains the word!"
-            qs = qs.filter(
-                Q(services__name__icontains=search_query) | 
-                Q(user__username__icontains=search_query)
-            )
-        return qs.distinct()
+        # 1. The Omni-Search (Searches Names, Usernames, Bios, and Services all at once!)
+        search_term = self.request.query_params.get('q', None)
+        if search_term:
+            queryset = queryset.filter(
+                Q(user__first_name__icontains=search_term) |
+                Q(user__last_name__icontains=search_term) |
+                Q(user__username__icontains=search_term) |
+                Q(bio__icontains=search_term) |
+                Q(services__name__icontains=search_term)
+            ).distinct() # Distinct prevents duplicates if a term matches multiple services
+            
+        # 2. The Price Slider Filter
+        max_price = self.request.query_params.get('max_price', None)
+        if max_price:
+            # This calculates the lowest service price for each barber, 
+            # and hides them if their cheapest service is more expensive than the slider
+            queryset = queryset.annotate(min_price=Min('services__price')).filter(min_price__lte=max_price)
+            
+        return queryset
 
 class BarberDetailView(generics.RetrieveAPIView):
     serializer_class = BarberProfileSerializer
@@ -88,6 +258,19 @@ class CreateBookingView(generics.CreateAPIView):
             BookingSerializer(booking).data,
             status=status.HTTP_201_CREATED
         )
+
+# --- CUSTOMER DASHBOARD (CX) ---
+class MyCustomerBookingsView(generics.ListAPIView):
+    serializer_class = BookingSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        # 1. Grab the currently logged-in user
+        user = self.request.user
+        
+        # 2. Return ONLY the bookings where this user is the customer
+        # We order it by date so their newest bookings show up at the top!
+        return Booking.objects.filter(customer=user).order_by('-time_slot__date', '-time_slot__start_time')
 
 # --- BARBER DASHBOARD (BX) ---
 class MyScheduleView(generics.ListAPIView):
@@ -188,6 +371,38 @@ class MyPhotoDetailView(generics.DestroyAPIView):
         # Security: Barbers can only delete their OWN photos
         return PortfolioPhoto.objects.filter(barber_profile=self.request.user.barber_profile)
 
+class MyStatsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        barber = request.user.barber_profile
+        today = datetime.date.today()
+
+        # Grab all slots for this barber
+        my_slots = TimeSlot.objects.filter(barber_profile=barber)
+        today_slots = my_slots.filter(date=today)
+        
+        # 1. Today's Bookings (Walk-ins + Registered Bookings)
+        today_bookings = today_slots.filter(status__in=['booked', 'walk_in']).count()
+        
+        # 2. Overall Bookings (All time)
+        overall_bookings = my_slots.filter(status__in=['booked', 'walk_in']).count()
+        
+        # 3. Today's Revenue
+        # We loop through today's registered bookings and sum the prices of their services.
+        # Note: Since Walk-ins don't have a linked 'Service' yet, they won't count toward 
+        # this revenue total. We can always add a custom price to Walk-ins later!
+        today_revenue = 0
+        for slot in today_slots.filter(status='booked'):
+            if hasattr(slot, 'booking') and slot.booking.service:
+                today_revenue += slot.booking.service.price
+
+        return Response({
+            'today_bookings': today_bookings,
+            'today_revenue': today_revenue,
+            'overall_bookings': overall_bookings
+        })
+    
 # --- REVIEWS ---
 class CreateReviewView(generics.CreateAPIView):
     serializer_class = ReviewSerializer
