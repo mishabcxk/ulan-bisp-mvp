@@ -1,19 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import API from '../api/axios';
 import CXNavbar from '../components/CXNavbar';
-
-// Helper function to generate the next 7 days
-const generateNext7Days = () => {
-  const dates = [];
-  for (let i = 0; i < 7; i++) {
-    const d = new Date();
-    d.setDate(d.getDate() + i);
-    dates.push(d.toISOString().split('T')[0]);
-  }
-  return dates;
-};
-const next7Days = generateNext7Days();
 
 // Helper for dynamic Experience Badge
 const getExperienceBadge = (dateJoined) => {
@@ -29,30 +17,43 @@ export default function CXBarberProfile() {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  // Data State
   const [barber, setBarber] = useState(null);
   const [slots, setSlots] = useState([]);
+  const [reviews, setReviews] = useState([]);
 
-  // Selection State
   const [selectedService, setSelectedService] = useState(null);
   const [selectedSlot, setSelectedSlot] = useState(null);
   
-  // Lightbox Gallery State
-  const [activePhotoIndex, setActivePhotoIndex] = useState(null);
+  // NEW: Week Offset State (0 = this week, 1 = next week, etc.)
+  const [weekOffset, setWeekOffset] = useState(0);
 
+  const [activePhotoIndex, setActivePhotoIndex] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // NEW: Dynamic 7 Days Generator based on arrow clicks
+  const next7Days = useMemo(() => {
+    const dates = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() + (weekOffset * 7) + i);
+      dates.push(d.toISOString().split('T')[0]);
+    }
+    return dates;
+  }, [weekOffset]);
 
   useEffect(() => {
     const fetchBarberData = async () => {
       try {
         setLoading(true);
-        const [profileRes, slotsRes] = await Promise.all([
+        const [profileRes, slotsRes, reviewsRes] = await Promise.all([
           API.get(`barbers/${id}/`),
-          API.get(`barbers/${id}/slots/`)
+          API.get(`barbers/${id}/slots/`),
+          API.get(`barbers/${id}/reviews/`)
         ]);
         setBarber(profileRes.data);
         setSlots(slotsRes.data);
+        setReviews(reviewsRes.data);
       } catch (err) {
         console.error(err);
         setError('Could not load barber profile. They might not exist.');
@@ -63,7 +64,6 @@ export default function CXBarberProfile() {
     fetchBarberData();
   }, [id]);
 
-  // Lightbox Navigation Functions
   const handleNextPhoto = useCallback(() => {
     if (!barber?.photos) return;
     setActivePhotoIndex((prev) => (prev + 1) % barber.photos.length);
@@ -104,7 +104,6 @@ export default function CXBarberProfile() {
       navigate(`/login?redirect=/barbers/${id}`);
       return;
     }
-    // NEW: We pass the actual data objects to the checkout page!
     navigate(`/checkout?slotId=${selectedSlot.id}&serviceId=${selectedService.id}`, {
       state: { slot: selectedSlot, service: selectedService, barber: barber }
     });
@@ -114,7 +113,6 @@ export default function CXBarberProfile() {
   if (error) return <div style={{ padding: 40, color: 'red', textAlign: 'center' }}>{error}</div>;
   if (!barber) return null;
 
-  // Dynamic values for the sticky sidebar
   const startingPrice = barber.services?.length > 0 ? Math.min(...barber.services.map(s => s.price)) : null;
   const displayPrice = selectedService ? selectedService.price : startingPrice;
   const exp = getExperienceBadge(barber.date_joined || barber.user?.date_joined);
@@ -123,12 +121,8 @@ export default function CXBarberProfile() {
     <div style={{ background: '#F9FAFB', minHeight: '100vh', fontFamily: 'inherit', paddingBottom: 60 }}>
       <CXNavbar />
       
-      {/* FULL-WIDTH CONTAINER FOR THE BACK BUTTON */}
       <div style={{ padding: '20px 40px 0 40px', maxWidth: 1100, margin: '0 auto' }}>
-        <button 
-          onClick={() => navigate(-1)} 
-          style={{ background: 'none', border: 'none', padding: 0, display: 'flex', alignItems: 'center', gap: 8, color: '#4B5563', fontWeight: 'bold', cursor: 'pointer', fontSize: 15 }}
-        >
+        <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', padding: 0, display: 'flex', alignItems: 'center', gap: 8, color: '#4B5563', fontWeight: 'bold', cursor: 'pointer', fontSize: 15 }}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <line x1="19" y1="12" x2="5" y2="12"></line>
             <polyline points="12 19 5 12 12 5"></polyline>
@@ -137,15 +131,10 @@ export default function CXBarberProfile() {
         </button>
       </div>
       
-      {/* 2-COLUMN LAYOUT CONTAINER */}
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '20px 20px', display: 'flex', gap: 40, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         
-        {/* ==========================================
-            LEFT COLUMN: Main Content
-            ========================================== */}
         <div style={{ flex: '1 1 600px', minWidth: 0 }}>
           
-          {/* Section: Header */}
           <div style={{ marginBottom: 40 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 15, marginBottom: 10 }}>
               <h1 style={{ margin: 0, fontSize: 36, color: '#111827', letterSpacing: '-0.5px' }}>
@@ -176,35 +165,23 @@ export default function CXBarberProfile() {
             <p style={{ color: '#4B5563', fontSize: 16, lineHeight: '1.6', margin: 0 }}>
               {barber.bio || 'Professional grooming services tailored to your style. I look forward to working with you!'}
             </p>
-            
-            {barber.latitude && barber.longitude && (
-              <a href={`http://maps.google.com/?q=$${barber.latitude},${barber.longitude}`} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', marginTop: 15, color: '#0284C7', textDecoration: 'none', fontWeight: 'bold', fontSize: 15 }}>
-                ↗ View exact location on Map
-              </a>
-            )}
           </div>
 
-          {/* Section: Portfolio */}
           {barber.photos && barber.photos.length > 0 && (
             <div style={{ marginBottom: 40 }}>
               <h2 style={{ fontSize: 20, color: '#111827', marginBottom: 15 }}>Portfolio</h2>
               <div style={{ display: 'flex', gap: 15, overflowX: 'auto', paddingBottom: 10 }}>
                 {barber.photos.map((photo, index) => (
                   <img 
-                    key={photo.id} 
-                    src={photo.image} 
-                    alt={`Portfolio ${index + 1}`}
-                    onClick={() => setActivePhotoIndex(index)} 
+                    key={photo.id} src={photo.image} alt={`Portfolio ${index + 1}`} onClick={() => setActivePhotoIndex(index)} 
                     style={{ width: 140, height: 140, objectFit: 'cover', borderRadius: 12, cursor: 'pointer', border: '1px solid #E5E7EB', transition: 'transform 0.2s' }} 
-                    onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.03)'}
-                    onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                    onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.03)'} onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
                   />
                 ))}
               </div>
             </div>
           )}
 
-          {/* Section: Services */}
           <div style={{ marginBottom: 40 }}>
             <h2 style={{ fontSize: 20, color: '#111827', marginBottom: 15 }}>1. Select a Service</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -236,17 +213,43 @@ export default function CXBarberProfile() {
             </div>
           </div>
 
-          {/* Section: Preply-Style Schedule Grid */}
+          {/* SCHEDULE GRID WITH ARROWS */}
           <div style={{ marginBottom: 40 }}>
-            <h2 style={{ fontSize: 20, color: '#111827', marginBottom: 15 }}>2. Select a Time</h2>
-            <p style={{ color: '#6B7280', fontSize: 14, marginBottom: 20 }}>
-              {selectedService ? 'Choose an available slot below.' : 'Please select a service above first.'}
-            </p>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 15 }}>
+              <div>
+                <h2 style={{ fontSize: 20, color: '#111827', margin: '0 0 5px 0' }}>2. Select a Time</h2>
+                <p style={{ color: '#6B7280', fontSize: 14, margin: 0 }}>
+                  {selectedService ? 'Choose an available slot below.' : 'Please select a service above first.'}
+                </p>
+              </div>
+
+              {/* ARROWS NAVIGATION */}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => setWeekOffset(prev => Math.max(0, prev - 1))}
+                  disabled={weekOffset === 0}
+                  style={{ 
+                    padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', 
+                    background: weekOffset === 0 ? '#F9FAFB' : 'white', 
+                    color: weekOffset === 0 ? '#9CA3AF' : '#111827', 
+                    cursor: weekOffset === 0 ? 'not-allowed' : 'pointer', fontWeight: 'bold' 
+                  }}
+                >
+                  ❮
+                </button>
+                <button
+                  onClick={() => setWeekOffset(prev => prev + 1)}
+                  style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', background: 'white', color: '#111827', cursor: 'pointer', fontWeight: 'bold' }}
+                >
+                  ❯
+                </button>
+              </div>
+            </div>
             
             <div style={{ border: '1px solid #E5E7EB', borderRadius: 12, background: 'white', overflow: 'hidden' }}>
               <div style={{ display: 'flex', overflowX: 'auto' }}>
                 {next7Days.map((date, index) => {
-                  // NEW: Sorted chronologically by start_time!
                   const daySlots = slots
                     .filter(slot => slot.date === date)
                     .sort((a, b) => a.start_time.localeCompare(b.start_time));
@@ -254,7 +257,6 @@ export default function CXBarberProfile() {
                   
                   return (
                     <div key={date} style={{ flex: '1 1 0', minWidth: 80, borderRight: index === 6 ? 'none' : '1px solid #E5E7EB', display: 'flex', flexDirection: 'column' }}>
-                      {/* Column Header (Date) */}
                       <div style={{ padding: '15px 5px', textAlign: 'center', borderBottom: '2px solid #F43F5E', background: '#F9FAFB' }}>
                         <div style={{ color: '#6B7280', fontSize: 12, textTransform: 'uppercase', fontWeight: 'bold' }}>
                           {dateObj.toLocaleDateString('en-US', { weekday: 'short' })}
@@ -264,13 +266,11 @@ export default function CXBarberProfile() {
                         </div>
                       </div>
                       
-                      {/* Column Body (Time Slots) */}
                       <div style={{ padding: '15px 10px', display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center', minHeight: 120 }}>
                         {daySlots.length > 0 ? (
                           daySlots.map(slot => (
                             <button
-                              key={slot.id}
-                              onClick={() => handleSlotClick(slot)}
+                              key={slot.id} onClick={() => handleSlotClick(slot)}
                               style={{
                                 width: '100%', padding: '10px 0', borderRadius: 8, cursor: 'pointer', fontWeight: 'bold', fontSize: 14, transition: 'all 0.2s',
                                 background: selectedSlot?.id === slot.id ? '#111827' : 'white',
@@ -293,15 +293,60 @@ export default function CXBarberProfile() {
             </div>
           </div>
 
+          {/* REVIEWS SECTION */}
+          <div style={{ marginBottom: 60, marginTop: 20 }}>
+            <h2 style={{ fontSize: 20, color: '#111827', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
+              Reviews <span style={{ color: '#6B7280', fontSize: 16, fontWeight: 'normal' }}>({reviews.length})</span>
+            </h2>
+
+            {reviews.length === 0 ? (
+              <div style={{ background: '#F9FAFB', padding: 30, borderRadius: 12, border: '1px dashed #D1D5DB', textAlign: 'center' }}>
+                <p style={{ color: '#6B7280', margin: 0, fontSize: 15 }}>No reviews yet. Be the first to book and leave feedback!</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                {reviews.map(review => (
+                  <div key={review.id} style={{ borderBottom: '1px solid #E5E7EB', paddingBottom: 20 }}>
+                    
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{ width: 40, height: 40, background: '#F3F4F6', color: '#4B5563', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: 16, border: '1px solid #D1D5DB' }}>
+                          {review.customer_name ? review.customer_name.charAt(0).toUpperCase() : 'U'}
+                        </div>
+                        <div>
+                          <strong style={{ display: 'block', color: '#111827', fontSize: 15 }}>{review.customer_name || 'Verified Customer'}</strong>
+                          {/* REAL DATE RENDERED HERE: Supports 'created_at' or 'date_created' from backend */}
+                          <span style={{ color: '#6B7280', fontSize: 13 }}>
+                            {review.created_at ? new Date(review.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : (review.date_created || 'Recently')}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: 2 }}>
+                        {[1, 2, 3, 4, 5].map(star => (
+                          <svg key={star} width="16" height="16" viewBox="0 0 24 24" fill={star <= review.rating ? "#F59E0B" : "#E5E7EB"} stroke="none">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                          </svg>
+                        ))}
+                      </div>
+                    </div>
+
+                    {review.comment && (
+                      <p style={{ margin: '10px 0 0 0', color: '#4B5563', fontSize: 15, lineHeight: '1.5' }}>
+                        "{review.comment}"
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* ==========================================
-            RIGHT COLUMN: Sticky Sidebar
-            ========================================== */}
+        {/* RIGHT COLUMN: Sticky Sidebar */}
         <div style={{ flex: '0 0 340px', width: '100%', position: 'sticky', top: 100, alignSelf: 'flex-start' }}>
           <div style={{ background: 'white', borderRadius: 16, border: '1px solid #E5E7EB', padding: 30, boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.05)' }}>
             
-            {/* Price Header */}
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 20 }}>
               <span style={{ fontSize: 32, fontWeight: 'bold', color: '#111827', letterSpacing: '-1px' }}>
                 {displayPrice ? `${(displayPrice / 1000)}k` : '—'} UZS
@@ -311,7 +356,6 @@ export default function CXBarberProfile() {
               </span>
             </div>
 
-            {/* Ratings & Reviews */}
             <div style={{ display: 'flex', gap: 20, marginBottom: 30 }}>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 18, fontWeight: 'bold', color: '#111827' }}>
@@ -321,7 +365,6 @@ export default function CXBarberProfile() {
               </div>
             </div>
 
-            {/* Summary Box (Appears when both are selected) */}
             {selectedService && selectedSlot && (
               <div style={{ background: '#F9FAFB', padding: 15, borderRadius: 8, border: '1px solid #E5E7EB', marginBottom: 20 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 14 }}>
@@ -335,10 +378,8 @@ export default function CXBarberProfile() {
               </div>
             )}
 
-            {/* Checkout Button */}
             <button
-              onClick={handleProceedToCheckout}
-              disabled={!selectedService || !selectedSlot}
+              onClick={handleProceedToCheckout} disabled={!selectedService || !selectedSlot}
               style={{
                 width: '100%', padding: '16px', background: (!selectedService || !selectedSlot) ? '#FCA5A5' : '#F43F5E', color: 'white',
                 border: 'none', borderRadius: 10, fontSize: 18, fontWeight: 'bold',
@@ -360,9 +401,6 @@ export default function CXBarberProfile() {
 
       </div>
 
-      {/* ==========================================
-          LIGHTBOX OVERLAY
-          ========================================== */}
       {activePhotoIndex !== null && (
         <div 
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.95)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column' }}
@@ -371,20 +409,15 @@ export default function CXBarberProfile() {
           <button onClick={() => setActivePhotoIndex(null)} style={{ position: 'absolute', top: 20, right: 30, background: 'none', border: 'none', color: '#9CA3AF', fontSize: 40, cursor: 'pointer', transition: 'color 0.2s' }} onMouseEnter={e => e.currentTarget.style.color = 'white'} onMouseLeave={e => e.currentTarget.style.color = '#9CA3AF'}>
             ×
           </button>
-
           {barber.photos.length > 1 && (
             <button onClick={handlePrevPhoto} style={{ position: 'absolute', left: 40, background: 'none', border: 'none', color: '#9CA3AF', fontSize: 50, cursor: 'pointer', padding: 20, transition: 'color 0.2s' }} onMouseEnter={e => e.currentTarget.style.color = 'white'} onMouseLeave={e => e.currentTarget.style.color = '#9CA3AF'}>
               ❮
             </button>
           )}
-
           <img src={barber.photos[activePhotoIndex].image} alt="Portfolio Fullscreen" style={{ maxHeight: '80vh', maxWidth: '80vw', objectFit: 'contain', borderRadius: 4 }} />
-          
-          {/* UPDATED LIGHTBOX CAPTION: Removed filename, added ordinal indicator */}
           <p style={{ color: '#D1D5DB', marginTop: 20, fontSize: 16, fontWeight: 'bold', letterSpacing: 1 }}>
             {activePhotoIndex + 1} OF {barber.photos.length}
           </p>
-
           {barber.photos.length > 1 && (
             <button onClick={handleNextPhoto} style={{ position: 'absolute', right: 40, background: 'none', border: 'none', color: '#9CA3AF', fontSize: 50, cursor: 'pointer', padding: 20, transition: 'color 0.2s' }} onMouseEnter={e => e.currentTarget.style.color = 'white'} onMouseLeave={e => e.currentTarget.style.color = '#9CA3AF'}>
               ❯

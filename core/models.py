@@ -1,5 +1,6 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.db.models import Avg
 
 class User(AbstractUser):
     ROLE_CHOICES = [
@@ -20,6 +21,20 @@ class BarberProfile(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     legal_name = models.CharField(max_length=255, blank=True, null=True)
     tax_id = models.CharField(max_length=9, blank=True, null=True)
+
+    @property
+    def reviews_count(self):
+        # Counts all reviews connected to this barber through bookings
+        return Review.objects.filter(booking__time_slot__barber_profile=self).count()
+
+    @property
+    def average_rating(self):
+        # Averages all the review ratings and rounds to 1 decimal place (e.g., 4.8)
+        reviews = Review.objects.filter(booking__time_slot__barber_profile=self)
+        if reviews.exists():
+            avg = reviews.aggregate(Avg('rating'))['rating__avg']
+            return round(avg, 1)
+        return 0.0 # Return 0 if no reviews yet
 
 class Service(models.Model):
     barber_profile = models.ForeignKey(BarberProfile, on_delete=models.CASCADE, related_name='services')
@@ -57,6 +72,7 @@ class Booking(models.Model):
         ('pending', 'Pending'),
         ('confirmed', 'Confirmed'),
         ('cancelled', 'Cancelled'),
+        ('completed', 'Completed'),
         ('no_show', 'No Show'),
     ]
     customer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='bookings')

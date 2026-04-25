@@ -35,6 +35,8 @@ urlpatterns = [
     path('my/services/<int:pk>/', views.MyServiceDetailView.as_view()),
     path('my/photos/', views.MyPhotosView.as_view()),
     path('my/photos/<int:pk>/', views.MyPhotoDetailView.as_view()),
+    path('my/slots/<int:slot_id>/no-show/', MarkNoShowView.as_view(), name='mark-no-show'),
+    path('my/slots/<int:pk>/', views.MyTimeSlotDetailView.as_view(), name='delete-slot'),
 
     # Reviews
     path('reviews/', views.CreateReviewView.as_view()),

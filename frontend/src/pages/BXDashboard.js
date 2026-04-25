@@ -322,6 +322,35 @@ export default function BXDashboard() {
     window.location.href = '/login'; 
   };
 
+  const handleMarkNoShow = async () => {
+    if (!window.confirm("Are you sure? The customer will not be able to leave a review.")) return;
+    
+    try {
+      await API.post(`my/slots/${selectedSlot.id}/no-show/`);
+      alert("Appointment marked as No-Show.");
+      setSelectedSlot(null); // Close the modal
+      fetchSchedule();       // Refresh the calendar
+      fetchStats();          // Refresh the stats
+    } catch (err) {
+      console.error(err);
+      alert("Failed to update status.");
+    }
+  };
+
+  const handleDeleteSlot = async () => {
+    if (!window.confirm("Are you sure you want to delete this available time slot?")) return;
+    
+    try {
+      await API.delete(`my/slots/${selectedSlot.id}/`);
+      alert("Slot removed successfully.");
+      setSelectedSlot(null); // Close the modal
+      fetchSchedule();       // Refresh the calendar
+    } catch (err) {
+      console.error(err);
+      alert("Failed to delete slot.");
+    }
+  };
+
   return (
     <div style={{ minHeight: '100vh', background: '#F9FAFB' }}>
       
@@ -350,7 +379,7 @@ export default function BXDashboard() {
         >
           {displayAvatar}
         </div>
-        
+
       </header>
 
       {/* --- TAB CONTENT: CALENDAR --- */}
@@ -365,12 +394,15 @@ export default function BXDashboard() {
               Add Walk-in
             </button>
 
+            {/* STATUS LEGEND */}
             <div style={{ marginTop: 20 }}>
               <h3 style={{ fontSize: 14, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 1 }}>Status Legend</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10, fontSize: 14 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ width: 12, height: 12, background: '#E5E7EB', borderRadius: 2 }}></span> Available</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ width: 12, height: 12, background: '#06B6D4', borderRadius: 2 }}></span> Booked</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ width: 12, height: 12, background: '#D946EF', borderRadius: 2 }}></span> Walk-in</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ width: 12, height: 12, background: '#10B981', borderRadius: 2 }}></span> Completed</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ width: 12, height: 12, background: '#EF4444', borderRadius: 2 }}></span> No-Show</div>
               </div>
             </div>
           </div>
@@ -435,13 +467,18 @@ export default function BXDashboard() {
                         if (slot?.status === 'available') bgColor = '#E5E7EB';
                         if (slot?.status === 'booked') bgColor = '#06B6D4';
                         if (slot?.status === 'walk_in') bgColor = '#D946EF';
+                        if (slot?.status === 'completed') bgColor = '#10B981';
+                        if (slot?.status === 'no_show') bgColor = '#EF4444';
 
                         return (
                           <td key={`${date}-${time}`} style={{ borderBottom: time.endsWith('30') ? '1px solid #E5E7EB' : '1px dashed #F3F4F6', borderRight: '1px solid #E5E7EB', padding: 2, height: 25 }}>
                             {slot && (
                               <div 
-                                onClick={() => { if (slot.status !== 'available') setSelectedSlot(slot); }}
-                                style={{ background: bgColor, height: '100%', borderRadius: 4, opacity: 0.8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 10, fontWeight: 'bold', overflow: 'hidden', cursor: slot.status !== 'available' ? 'pointer' : 'default' }} 
+                                onClick={() => setSelectedSlot(slot)}
+                                style={{ background: bgColor, height: '100%', borderRadius: 4, opacity: 0.8, 
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center', 
+                                  color: 'white', fontSize: 10, fontWeight: 'bold', overflow: 'hidden', 
+                                  cursor: 'pointer' }} 
                                 title={slot.status}
                               >
                                  {slot.display_name ? slot.display_name : ''}
@@ -713,9 +750,15 @@ export default function BXDashboard() {
                 <span style={{ color: '#6B7280' }}>Time:</span>
                 <strong>{selectedSlot.start_time.substring(0, 5)} - {selectedSlot.end_time.substring(0, 5)}</strong>
               </div>
+              {/* Dynamic Status Color inside the Modal */}
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: '#6B7280' }}>Status:</span>
-                <strong style={{ color: selectedSlot.status === 'walk_in' ? '#D946EF' : '#06B6D4', textTransform: 'capitalize' }}>
+                <strong style={{ 
+                  color: selectedSlot.status === 'walk_in' ? '#D946EF' : 
+                         selectedSlot.status === 'completed' ? '#10B981' :
+                         selectedSlot.status === 'no_show' ? '#EF4444' : '#06B6D4', 
+                  textTransform: 'capitalize' 
+                }}>
                   {selectedSlot.status.replace('_', '-')}
                 </strong>
               </div>
@@ -740,6 +783,27 @@ export default function BXDashboard() {
             <button onClick={() => setSelectedSlot(null)} style={{ marginTop: 25, width: '100%', padding: 10, background: '#F3F4F6', color: '#374151', border: 'none', borderRadius: 6, fontWeight: 'bold', cursor: 'pointer' }}>
               Close
             </button>
+
+            {/* Delete button ONLY for available slots */}
+            {selectedSlot.status === 'available' && (
+              <button 
+                onClick={handleDeleteSlot} 
+                style={{ width: '100%', padding: 10, background: 'white', color: '#EF4444', border: '1px solid #EF4444', borderRadius: 6, fontWeight: 'bold', cursor: 'pointer', marginTop: 10 }}
+              >
+                Delete Slot
+              </button>
+            )}
+
+            {/* Allow barber to mark no-show even if it auto-completed! */}
+              {(selectedSlot.status === 'booked' || selectedSlot.status === 'completed') && (
+                <button 
+                  onClick={handleMarkNoShow} 
+                  style={{ flex: 1, padding: 10, background: '#FEF2F2', color: '#EF4444', border: '1px solid #FECACA', borderRadius: 6, fontWeight: 'bold', cursor: 'pointer', marginTop: 15, width: '100%' }}
+                >
+                  Mark No-Show
+                </button>
+              )}
+
           </div>
         </div>
       )}

@@ -4,9 +4,8 @@ from .models import *
 class UserRegistrationSerializer(serializers.ModelSerializer):
     # We explicitly declare these so Django accepts them in the request, 
     # even though they don't belong to the User model directly!
-    legal_name = serializers.CharField(write_only=True, required=False)
-    tax_id = serializers.CharField(write_only=True, required=False)
-
+    legal_name = serializers.CharField(write_only=True, required=False, allow_blank=True, allow_null=True)
+    tax_id = serializers.CharField(write_only=True, required=False, allow_blank=True, allow_null=True)
     class Meta:
         model = User # (Or whatever your custom user model is named)
         fields = ['username', 'email', 'phone', 'first_name', 'last_name', 'password', 'role', 'legal_name', 'tax_id']
@@ -61,6 +60,8 @@ class BarberProfileSerializer(serializers.ModelSerializer):
     services = ServiceSerializer(many=True, read_only=True)
     photos = PortfolioPhotoSerializer(many=True, read_only=True)
     average_rating = serializers.SerializerMethodField()
+    reviews_count = serializers.IntegerField(read_only=True)
+    average_rating = serializers.FloatField(read_only=True)
 
     class Meta:
         model = BarberProfile
@@ -78,48 +79,43 @@ class BarberProfileSerializer(serializers.ModelSerializer):
         return None
 
 class TimeSlotSerializer(serializers.ModelSerializer):
-    # NEW: A virtual field that calculates the name on the fly
+    # Tell Django we are going to generate a custom field called display_name
     display_name = serializers.SerializerMethodField()
 
     class Meta:
         model = TimeSlot
-        fields = '__all__' 
-        read_only_fields = ['barber_profile'] 
+        fields = '__all__'
 
-    # The function that calculates the value for 'display_name'
     def get_display_name(self, obj):
-        # 1. If it's a walk-in, grab the text directly from this table
-        if obj.status == 'walk_in':
+        # 1. First, check if it's a manual Walk-in (where you typed the name yourself)
+        if hasattr(obj, 'client_name') and obj.client_name:
             return obj.client_name
             
-        # 2. If it's booked, travel across the database to the Booking table!
-        elif obj.status == 'booked':
-            try:
-                # Because Booking has a OneToOneField to TimeSlot, Django 
-                # secretly created a reverse link called '.booking' for us!
-                customer = obj.booking.customer
-                
-                # Combine first and last name, or use username as a fallback
-                full_name = f"{customer.first_name} {customer.last_name}".strip()
-                return full_name if full_name else customer.username
-            except Exception:
-                # Fallback just in case the booking record is missing
-                return "Registered Customer"
-                
-        # 3. If it's available, show nothing
-        return ""
+        # 2. If it's a registered app booking, go find the attached Booking record
+        from .models import Booking
+        booking = Booking.objects.filter(time_slot=obj).first()
+        
+        # 3. Extract their beautiful full name!
+        if booking and booking.customer:
+            user = booking.customer
+            if user.first_name:
+                return f"{user.first_name} {user.last_name}".strip()
+            return user.username
+            
+        return "" # Return blank if it's just an 'available' slot
 
 class BookingSerializer(serializers.ModelSerializer):
     service = ServiceSerializer(read_only=True)
     time_slot = TimeSlotSerializer(read_only=True)
-    
-    # NEW: Explicitly grab the barber's info so React doesn't have to guess!
     barber_name = serializers.SerializerMethodField()
     barber_id = serializers.SerializerMethodField()
-
+    has_review = serializers.SerializerMethodField()
     class Meta:
         model = Booking
         fields = '__all__'
+
+    def get_has_review(self, obj):
+        return Review.objects.filter(booking=obj).exists()
 
     def get_barber_name(self, obj):
         # Navigate through the time slot to the profile, then to the user
@@ -132,6 +128,15 @@ class BookingSerializer(serializers.ModelSerializer):
         return obj.time_slot.barber_profile.id
 
 class ReviewSerializer(serializers.ModelSerializer):
+    customer_name = serializers.SerializerMethodField()
+    date_created = serializers.DateTimeField(read_only=True, format="%B %d, %Y") # Formats nicely!
+
     class Meta:
         model = Review
         fields = '__all__'
+
+    def get_customer_name(self, obj):
+        user = obj.booking.customer
+        if user.first_name:
+            return f"{user.first_name} {user.last_name}".strip()
+        return user.username

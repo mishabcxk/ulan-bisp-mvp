@@ -265,13 +265,29 @@ class MyCustomerBookingsView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        # 1. Grab the currently logged-in user
         user = self.request.user
+        bookings = Booking.objects.filter(customer=user)
         
-        # 2. Return ONLY the bookings where this user is the customer
-        # We order it by date so their newest bookings show up at the top!
-        return Booking.objects.filter(customer=user).order_by('-time_slot__date', '-time_slot__start_time')
-
+        # --- THE LAZY AUTO-COMPLETE ENGINE ---
+        # When the customer loads this page, check if any 'confirmed' bookings are in the past.
+        now = datetime.datetime.now()
+        
+        for b in bookings:
+            if b.status == 'confirmed':
+                # Combine the Date and Time into a single datetime object
+                end_datetime = datetime.datetime.combine(b.time_slot.date, b.time_slot.end_time)
+                
+                # If that time has passed, automatically complete it!
+                if end_datetime < now:
+                    b.status = 'completed'
+                    b.save()
+                    
+                    b.time_slot.status = 'completed'
+                    b.time_slot.save()
+                    
+        # Return the newly updated list
+        return bookings.order_by('-time_slot__date', '-time_slot__start_time')
+    
 # --- BARBER DASHBOARD (BX) ---
 class MyScheduleView(generics.ListAPIView):
     serializer_class = TimeSlotSerializer
@@ -285,6 +301,47 @@ class CreateTimeSlotView(generics.CreateAPIView):
     serializer_class = TimeSlotSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def create(self, request, *args, **kwargs):
+        # 1. Securely grab the currently logged-in barber
+        my_barber_profile = request.user.barber_profile
+
+        # 2. Make a mutable copy of React's data and inject the barber ID!
+        # This stops the Serializer from throwing a 400 Bad Request.
+        data = request.data.copy()
+        data['barber_profile'] = my_barber_profile.id
+
+        # 3. Extract the exact date and time
+        date = data.get('date')
+        start_time = data.get('start_time')
+
+        # 4. Look to see if a slot already exists for this exact time
+        existing_slot = TimeSlot.objects.filter(
+            barber_profile=my_barber_profile,
+            date=date,
+            start_time=start_time
+        ).first()
+
+        if existing_slot:
+            # SAFETY CHECK: Don't let bulk-availability overwrite a booked customer!
+            if existing_slot.status == 'booked' and data.get('status') == 'available':
+                return Response(
+                    {"detail": "Cannot overwrite a booked slot."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # UPSERT: Update the existing slot (e.g., changing 'available' to 'walk_in')
+            serializer = self.get_serializer(existing_slot, data=data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            serializer.save() 
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        
+        else:
+            # INSERT: Create a brand new slot
+            serializer = self.get_serializer(data=data)
+            serializer.is_valid(raise_exception=True) # It will pass validation now!
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        
 class MyBarberProfileView(generics.RetrieveUpdateAPIView):
     serializer_class = BarberProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -314,42 +371,6 @@ class MyServiceDetailView(generics.RetrieveUpdateDestroyAPIView):
         # Security check: Barbers can only edit/delete their OWN services!
         return Service.objects.filter(barber_profile=self.request.user.barber_profile)
 
-    # We override the default 'create' method to add our Upsert logic
-    def create(self, request, *args, **kwargs):
-        # 1. Grab the currently logged-in barber
-        my_barber_profile = request.user.barber_profile
-
-        # 2. Extract the exact date and time from React's request
-        date = request.data.get('date')
-        start_time = request.data.get('start_time')
-
-        # 3. Look to see if a slot already exists for this exact time
-        existing_slot = TimeSlot.objects.filter(
-            barber_profile=my_barber_profile,
-            date=date,
-            start_time=start_time
-        ).first()
-
-        if existing_slot:
-            # SAFETY CHECK: Don't let bulk-availability overwrite a booked customer!
-            if existing_slot.status == 'booked' and request.data.get('status') == 'available':
-                return Response(
-                    {"detail": "Cannot overwrite a booked slot."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            # UPSERT: Update the existing slot (e.g., changing 'available' to 'walk_in')
-            serializer = self.get_serializer(existing_slot, data=request.data, partial=True)
-            serializer.is_valid(raise_exception=True)
-            serializer.save() 
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        
-        else:
-            # INSERT: Create a brand new slot
-            serializer = self.get_serializer(data=request.data)
-            serializer.is_valid(raise_exception=True)
-            serializer.save(barber_profile=my_barber_profile)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 class MyPhotosView(generics.ListCreateAPIView):
     serializer_class = PortfolioPhotoSerializer
@@ -403,6 +424,31 @@ class MyStatsView(APIView):
             'overall_bookings': overall_bookings
         })
     
+class MarkNoShowView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, slot_id):
+        try:
+            slot = TimeSlot.objects.get(id=slot_id, barber_profile=request.user.barber_profile)
+            
+            # 1. Update the Slot for the barber's calendar
+            slot.status = 'no_show'
+            slot.save()
+            
+            # 2. BULLETPROOF UPDATE: Force the attached booking to sync instantly
+            Booking.objects.filter(time_slot=slot).update(status='no_show')
+            
+            return Response({"detail": "Successfully marked as No-Show."})
+        except TimeSlot.DoesNotExist:
+            return Response({"detail": "Slot not found."}, status=status.HTTP_404_NOT_FOUND)
+class MyTimeSlotDetailView(generics.DestroyAPIView):
+    serializer_class = TimeSlotSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        # Security: The barber can only delete slots attached to their own profile!
+        return TimeSlot.objects.filter(barber_profile=self.request.user.barber_profile)
+        
 # --- REVIEWS ---
 class CreateReviewView(generics.CreateAPIView):
     serializer_class = ReviewSerializer

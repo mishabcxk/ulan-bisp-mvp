@@ -235,12 +235,12 @@ export default function RegisterPage() {
               </div>
 
               <div>
-                <input name="username" placeholder="Username" value={formData.username} onChange={handleChange} onBlur={handleBlur} style={{ width: '100%', boxSizing: 'border-box', padding: 12, borderRadius: 6, border: getError('username') ? '1px solid #EF4444' : '1px solid #D1D5DB', outlineColor: '#06B6D4', fontFamily: 'inherit' }} />
+                <input name="username" placeholder="Username" autoComplete="off" value={formData.username} onChange={handleChange} onBlur={handleBlur} style={{ width: '100%', boxSizing: 'border-box', padding: 12, borderRadius: 6, border: getError('username') ? '1px solid #EF4444' : '1px solid #D1D5DB', outlineColor: '#06B6D4', fontFamily: 'inherit' }} />
                 {getError('username') && <div style={{ color: '#EF4444', fontSize: 12, marginTop: 4 }}>{getError('username')}</div>}
               </div>
 
               <div>
-                <input type="email" name="email" placeholder="Email Address" value={formData.email} onChange={handleChange} onBlur={handleBlur} style={{ width: '100%', boxSizing: 'border-box', padding: 12, borderRadius: 6, border: getError('email') ? '1px solid #EF4444' : '1px solid #D1D5DB', outlineColor: '#06B6D4', fontFamily: 'inherit' }} />
+                <input type="email" name="email" placeholder="Email Address" autoComplete="off" value={formData.email} onChange={handleChange} onBlur={handleBlur} style={{ width: '100%', boxSizing: 'border-box', padding: 12, borderRadius: 6, border: getError('email') ? '1px solid #EF4444' : '1px solid #D1D5DB', outlineColor: '#06B6D4', fontFamily: 'inherit' }} />
                 {getError('email') && <div style={{ color: '#EF4444', fontSize: 12, marginTop: 4 }}>{getError('email')}</div>}
               </div>
 
@@ -265,11 +265,11 @@ export default function RegisterPage() {
 
               <div style={{ display: 'flex', gap: 15 }}>
                 <div style={{ flex: 1 }}>
-                  <input type="password" name="password" placeholder="Password" value={formData.password} onChange={handleChange} onBlur={handleBlur} style={{ width: '100%', boxSizing: 'border-box', padding: 12, borderRadius: 6, border: getError('password') ? '1px solid #EF4444' : '1px solid #D1D5DB', outlineColor: '#06B6D4', fontFamily: 'inherit' }} />
+                  <input type="password" name="password" placeholder="Password" autoComplete="new-password" value={formData.password} onChange={handleChange} onBlur={handleBlur} style={{ width: '100%', boxSizing: 'border-box', padding: 12, borderRadius: 6, border: getError('password') ? '1px solid #EF4444' : '1px solid #D1D5DB', outlineColor: '#06B6D4', fontFamily: 'inherit' }} />
                   {getError('password') && <div style={{ color: '#EF4444', fontSize: 12, marginTop: 4 }}>{getError('password')}</div>}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <input type="password" name="confirmPassword" placeholder="Confirm Password" value={formData.confirmPassword} onChange={handleChange} onBlur={handleBlur} style={{ width: '100%', boxSizing: 'border-box', padding: 12, borderRadius: 6, border: getError('confirmPassword') ? '1px solid #EF4444' : '1px solid #D1D5DB', outlineColor: '#06B6D4', fontFamily: 'inherit' }} />
+                  <input type="password" name="confirmPassword" placeholder="Confirm Password" autoComplete="new-password" value={formData.confirmPassword} onChange={handleChange} onBlur={handleBlur} style={{ width: '100%', boxSizing: 'border-box', padding: 12, borderRadius: 6, border: getError('confirmPassword') ? '1px solid #EF4444' : '1px solid #D1D5DB', outlineColor: '#06B6D4', fontFamily: 'inherit' }} />
                   {getError('confirmPassword') && <div style={{ color: '#EF4444', fontSize: 12, marginTop: 4 }}>{getError('confirmPassword')}</div>}
                 </div>
               </div>
